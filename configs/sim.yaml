@@ -1,0 +1,126 @@
+# configs/sim.yaml
+# SimTriage configuration. Mirrors METHOD_DESIGN §"超参数表" and SPEC §3.
+# What MUST be swept: lam (the Pareto-frontier axis), rho (label cost vs evolution speed).
+# Insensitive: voq.l2, qvl.hoeffding_alpha.
+
+simtriage:
+  # lambda has units [value / simulator-step]; the gate fires iff g_hat > lam * c(s), where
+  # c(s) = m*K*E[rollout_len] is the FULL per-query step cost (tens of steps) and g_hat is in
+  # game-return value units (~[0,2]). So the active range of lambda is ~[0, 0.02]. The grid
+  # below is calibrated to that step-cost scale to trace a NON-degenerate Pareto frontier.
+  # (The spec's nominal [0.0,0.01,0.05,0.1,0.5] assumed a different cost normalization and
+  # collapses to never-query at this step scale — see audit finding H3.) Re-tune per game/backend.
+  lam_sweep: [0.0, 0.001, 0.003, 0.006, 0.01, 0.02, 0.05]   # price coefficient; MUST sweep (Pareto axis)
+  lam_default: 0.006
+  m: 3                                      # number of top candidate actions per query
+  # K = rollouts per candidate (averaged). Per-game (SPEC §3). mock = synthetic smoke game.
+  K: {catan: 5, sts: 3, minecraft: 1, mock: 5}
+  # d = rollout depth. "to_turn_end"/"to_game_end" or an integer horizon.
+  d: {catan: "to_turn_end", sts: 10, minecraft: 20, mock: 1}
+  rho_start: 0.10                           # reference-label sampling rate at the start
+  rho_end: 0.02                             # annealed reference rate late in training
+  rho_anneal_instances: 50                  # linear anneal rho over this many instances
+
+  voq:
+    type: "ridge"                           # "ridge" | "knn"
+    l2: 1.0                                  # ridge L2 (insensitive)
+    optimistic: 1.0                          # cold-start optimistic VoQ (encourages early querying)
+    warmup_n: 20                            # below this many labels, predict the optimistic value
+    knn_k: 8                                 # only used when type == "knn"
+
+  qvl:
+    hoeffding_alpha: 0.1                     # confidence level for prototype retain/eject (insensitive)
+    min_count: 8                            # min samples before a prototype is "trusted"
+    proto_radius: 0.75                       # online-clustering radius in (normalized) phi space
+    voq_range: 2.0                           # R in Hoeffding bound = assumed range of VoQ labels
+    enable_transfer_prior: true             # let QVL seed cold-start VoQ predictions across instances
+
+  # Reference (calibration) query budget — high-budget rollout for self-supervised labels.
+  reference:
+    K: {catan: 20, sts: 8, minecraft: 1, mock: 5}    # rollouts per candidate for the reference query
+    d: {catan: "to_game_end", sts: 20, minecraft: 20, mock: 1}
+    use_crn: true                           # common random numbers in seedable envs (Catan/StS)
+
+policy:
+  backend: "heuristic"                      # "heuristic" | "llm" | "random"
+  temperature: 0.7
+  top_m: 3
+  # --- Rollout policy (the cheap default policy that drives query rollouts) ---
+  # NOTE: rollouts/reference run on the LOCAL catanatron simulator, NOT the LLM, so the only
+  # paid API calls are the per-decision prior (top_candidates) and the -M2 ablation's imagine_q.
+  rollout_policy: "weighted_random"         # "random" | "weighted_random" | "value" | "prior"
+
+  # --- LLM backend (used when backend == "llm"). Multiple providers configured side by side;
+  #     switch with `policy.provider` or the scripts' `--provider`. All are frozen, zero-update.
+  provider: "deepseek"                      # which profile below to use
+  cache: false                              # disk-cache prior calls (saves $; freezes sampling)
+  cache_dir: "outputs/llm_cache"
+  max_retries: 5                            # exponential backoff on rate-limit / network errors
+  timeout_s: 60
+  max_tokens: 512
+  providers:
+    openai:
+      api: "openai"
+      model: "gpt-4o-mini"
+      base_url: null                        # null => api.openai.com default
+      api_key_env: "OPENAI_API_KEY"
+    qwen:                                    # Aliyun DashScope, OpenAI-compatible (spec's Qwen2.5)
+      api: "openai"
+      model: "qwen2.5-7b-instruct"
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      api_key_env: "DASHSCOPE_API_KEY"
+    deepseek:
+      api: "openai"
+      model: "deepseek-chat"
+      base_url: "https://api.deepseek.com/v1"
+      api_key_env: "DEEPSEEK_API_KEY"
+    vllm:                                    # local OpenAI-compatible vLLM server (optional)
+      api: "openai"
+      model: "Qwen2.5-7B-Instruct"
+      base_url: "http://localhost:8000/v1"
+      api_key_env: "OPENAI_API_KEY"
+    anthropic:
+      api: "anthropic"
+      model: "claude-haiku-4-5-20251001"
+      base_url: null
+      api_key_env: "ANTHROPIC_API_KEY"
+
+features:
+  instance_dependent: false                 # MUST be false for transfer (ablation flips it to true)
+  # which scalar features to include (all instance-INVARIANT)
+  use: ["margin", "entropy", "log_valid", "phase", "irrev", "progress", "branch_balance"]
+
+env:
+  catan:
+    num_players: 4
+    our_color: "RED"                        # the color SimTriage controls
+    opponents: "weighted_random"            # bot policy for opponents: random|weighted_random|value
+    return_kind: "victory_points"           # "victory_points" | "win" | "vp_margin"
+    max_ticks: 2000                         # safety cap per episode
+  sts:
+    supports_cheap_clone: false             # true only if a fast forward simulator is wired in
+  minecraft:
+    supports_cheap_clone: false
+  mock:                                     # dependency-free synthetic game (smoke/CI)
+    n_steps: 30
+    n_actions: 6
+    prior_sigma: 0.6
+    rollout_noise: 0.0
+
+experiment:
+  games: ["catan"]                          # run catan first; add "sts","minecraft" later
+  seeds_train: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  seeds_heldout: [100, 101, 102, 103, 104]  # held-out instances for the transfer test
+  episodes_per_seed: 1
+  methods: ["simtriage", "never_query", "always_query", "fixed_threshold", "random_gate"]
+  ablations: ["minus_m2_imagine", "minus_m3_from_scratch", "phi_instance_dependent"]
+  output_dir: "outputs"
+  seed_global: 12345
+
+kill_criteria:
+  # See METHOD_DESIGN §7 / SPEC §4. Checked automatically by metrics.evaluate_kill_criteria.
+  query_value_min_delta: 0.10               # always-query must beat never-query return by >= this (relative) else premise fails
+  query_value_significance_p: 0.05
+  calib_no_improve_tol: 0.0                  # held-out calibration error must trend down
+  episode_wallclock_limit_s: 600            # a single episode exceeding this => "no cheap simulator"
+  transfer_min_gain: 0.0                     # QVL transfer must beat from-scratch by >= this

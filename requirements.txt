@@ -1,0 +1,24 @@
+# SimTriage dependencies
+# Core (always needed)
+numpy>=1.24
+scipy>=1.10
+scikit-learn>=1.3
+pydantic>=2.0
+PyYAML>=6.0
+
+# Catan (Task 1, primary environment — implement & test first)
+catanatron>=3.2.0
+# catanatron-gym   # optional gym wrapper; the adapter uses the native Game API directly
+
+# Plotting (Task 9 main figures)
+matplotlib>=3.7
+
+# LLM prior backends (optional; pick what your environment provides)
+# vLLM (local GPU serving of a frozen 7-8B model)
+# vllm>=0.4
+# openai>=1.0       # OpenAI-compatible API (also works against a vLLM server)
+# anthropic>=0.25
+
+# Slay the Spire / Minecraft are scaffolded but optional; install per their own docs:
+#   spirecomm (+ CommunicationMod) for StS
+#   MineDojo / Voyager + Node.js + Mineflayer for Minecraft
