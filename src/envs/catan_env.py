@@ -255,11 +255,37 @@ class CatanEnv(GameEnv):
                 break
         return steps
 
+    def _player_strength(self, g, color) -> float:
+        """Continuous board strength = VP (dominant) + small-weight LEADING indicators that
+        are below the VP threshold: longest-road length, settlements/cities, hand resources,
+        largest-army holder. These break ties between equal-VP states so a rollout can actually
+        distinguish candidate actions (fixes the hit_rate~=0 / VP-only coarseness, audit-finding
+        from the first Catan run). Degrades to VP-only if any accessor is unavailable."""
+        score = float(self._vp(g, color))
+        try:
+            from catanatron.models.enums import CITY, SETTLEMENT
+            from catanatron.state_functions import (get_largest_army,
+                                                    get_longest_road_length,
+                                                    get_player_buildings,
+                                                    player_num_resource_cards)
+            score += 0.20 * float(get_longest_road_length(g.state, color))
+            score += 0.30 * len(get_player_buildings(g.state, color, SETTLEMENT))
+            score += 0.60 * len(get_player_buildings(g.state, color, CITY))
+            score += 0.08 * float(player_num_resource_cards(g.state, color))
+            la = get_largest_army(g.state)
+            holder = la[0] if isinstance(la, (tuple, list)) else la
+            if holder == color:
+                score += 0.50
+        except Exception:
+            pass
+        return score
+
     def _value_estimate(self, perspective: Any) -> float:
-        """Competitive value in ~[-2, 2]: VP gap (/10) plus a terminal win/loss bonus."""
+        """Competitive value ~[-2, 2]: (my strength - best opponent strength)/10 + terminal bonus."""
         g = self.game
-        me = self._vp(g, perspective)
-        opp = self._max_opp_vp(g, perspective)
+        colors = list(self._colors(g))
+        me = self._player_strength(g, perspective)
+        opp = max((self._player_strength(g, c) for c in colors if c != perspective), default=0.0)
         val = (me - opp) / 10.0
         w = self._winner(g)
         if w is not None:
