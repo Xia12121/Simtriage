@@ -268,7 +268,7 @@ class LLMPolicy(Policy):
         # Pre-filter to top-k by the env's cheap heuristic, THEN let the LLM rank those. This
         # cuts prompt size & latency on high-branch states and focuses the prior on plausible
         # actions (the white-box legal set is still the source; the heuristic only narrows it).
-        kf = max(int(m), int(self.pcfg.get("llm_prefilter", 8)))
+        kf = max(int(m), int(self.cfg.get("llm_prefilter", 8)))
         try:
             hs = np.asarray(env.heuristic_scores(state, actions), dtype=float)
             order = np.argsort(hs)[::-1][:min(kf, len(actions))]
