@@ -112,13 +112,49 @@ class GameEnv(ABC):
         *same* luck (METHOD_DESIGN §4.2). Honored only where ``supports_cheap_clone``.
         """
         depth = self._depth if depth is None else depth
-        branch = self.clone(state)
-        if crn_seed is not None:
-            branch._set_crn(crn_seed)
-        steps = branch._apply_and_playout(action, policy, depth)
-        self._sim_steps_total += steps
-        self._update_rollout_len_ema(steps)
-        return branch._value_estimate(perspective=state.agent_id)
+        # Isolate ALL randomness this query consumes so it NEVER perturbs the real episode's
+        # dice/opponent stream. Without this, query rollouts (esp. CRN reseeding of the global
+        # RNG used by the simulator, and clone() drawing from self._rng) corrupt the main game
+        # and make queried vs non-queried episodes incomparable (observed: always-query results
+        # collapsing to identical values across seeds). Snapshot before, restore in finally.
+        snap = self._rng_snapshot()
+        try:
+            branch = self.clone(state)
+            if crn_seed is not None:
+                branch._set_crn(crn_seed)
+            steps = branch._apply_and_playout(action, policy, depth)
+            self._sim_steps_total += steps
+            self._update_rollout_len_ema(steps)
+            return branch._value_estimate(perspective=state.agent_id)
+        finally:
+            self._rng_restore(snap)
+
+    # ---- RNG isolation: a query must not change the real episode's random stream ----
+    def _rng_snapshot(self):
+        import random as _random
+
+        import numpy as _np
+        try:
+            rng_state = self._rng.bit_generator.state
+        except Exception:
+            rng_state = None
+        return (_random.getstate(), _np.random.get_state(), rng_state)
+
+    def _rng_restore(self, snap) -> None:
+        import random as _random
+
+        import numpy as _np
+        py_state, np_state, rng_state = snap
+        try:
+            _random.setstate(py_state)
+            _np.random.set_state(np_state)
+        except Exception:
+            pass
+        if rng_state is not None:
+            try:
+                self._rng.bit_generator.state = rng_state
+            except Exception:
+                pass
 
     def _update_rollout_len_ema(self, steps: int, alpha: float = 0.1) -> None:
         s = float(steps)
@@ -151,6 +187,7 @@ class GameEnv(ABC):
         irrev = max(0, 1 - |valid(s')| / |valid(s)|) where s' = s after ``action``.
         Computed on a throwaway clone so the real env is untouched.
         """
+        snap = self._rng_snapshot()
         try:
             before = max(1, len(self.valid_actions(state)))
             branch = self.clone(state)
@@ -159,6 +196,8 @@ class GameEnv(ABC):
             return float(max(0.0, 1.0 - (after / before)))
         except Exception:
             return 0.0
+        finally:
+            self._rng_restore(snap)
 
     def phase_progress(self, state: State) -> float:
         """Normalized game progress in [0,1] (instance-invariant). Override per game."""
