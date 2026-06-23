@@ -102,6 +102,7 @@ class GameEnv(ABC):
         policy: Any,
         depth: Any = None,
         crn_seed: Optional[int] = None,
+        track_len: bool = True,
     ) -> float:
         """One bounded rollout: clone @ state, apply ``action``, play forward with
         ``policy`` to ``depth``, return a scalar value estimate from ``state.agent_id``'s
@@ -110,6 +111,9 @@ class GameEnv(ABC):
         ``crn_seed`` (common random numbers): when set, the stochastic draws of this
         rollout are made reproducible so that two candidate actions are compared under the
         *same* luck (METHOD_DESIGN §4.2). Honored only where ``supports_cheap_clone``.
+
+        ``track_len``: whether this rollout updates the query-cost EMA. True for acting queries,
+        False for high-budget reference rollouts (which would otherwise inflate the estimate).
         """
         depth = self._depth if depth is None else depth
         # Isolate ALL randomness this query consumes so it NEVER perturbs the real episode's
@@ -124,7 +128,8 @@ class GameEnv(ABC):
                 branch._set_crn(crn_seed)
             steps = branch._apply_and_playout(action, policy, depth)
             self._sim_steps_total += steps
-            self._update_rollout_len_ema(steps)
+            if track_len:  # only ACTING-query rollouts calibrate query_cost; reference rollouts
+                self._update_rollout_len_ema(steps)  # (to_game_end) would otherwise inflate it
             return branch._value_estimate(perspective=state.agent_id)
         finally:
             self._rng_restore(snap)

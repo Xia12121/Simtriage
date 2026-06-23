@@ -35,9 +35,13 @@ def run_query(
     depth,
     use_crn: bool = True,
     crn_seed: Optional[int] = None,
+    track_len: bool = True,
 ) -> tuple[object, list[float]]:
     """For each candidate in A run K bounded rollouts (depth d) and average. Return
-    (a_hat, q) where q[i] is the mean value of A[i] and a_hat = A[argmax q]."""
+    (a_hat, q) where q[i] is the mean value of A[i] and a_hat = A[argmax q].
+
+    ``track_len`` calibrates the query-cost EMA (True for acting queries, False for the
+    high-budget reference query so it doesn't inflate the estimate)."""
     if not A:
         return None, []
     crn_seeds = None
@@ -50,7 +54,7 @@ def run_query(
         vals = []
         for j in range(K):
             s = crn_seeds[j] if crn_seeds is not None else None
-            vals.append(env.rollout(state, a, rollout_policy, depth, crn_seed=s))
+            vals.append(env.rollout(state, a, rollout_policy, depth, crn_seed=s, track_len=track_len))
         q.append(float(np.mean(vals)) if vals else 0.0)
     best = int(np.argmax(q))
     return A[best], q
@@ -76,7 +80,8 @@ def reference_voq(
     small max-selection optimism. We mitigate with a high K_ref + CRN + deeper depth_ref
     (per spec). This stays faithful to the Algorithm-1 definition.
     """
-    a_ref, q = run_query(env, state, A, rollout_policy, K_ref, depth_ref, use_crn, crn_seed)
+    a_ref, q = run_query(env, state, A, rollout_policy, K_ref, depth_ref, use_crn, crn_seed,
+                         track_len=False)  # reference is high-budget; don't let it skew query_cost
     if not q:
         return 0.0, None, []
     y = float(max(q) - q[0])  # improvement of the simulator's pick over the prior's pick
