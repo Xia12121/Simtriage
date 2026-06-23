@@ -52,13 +52,18 @@ policy:
 
   # --- LLM backend (used when backend == "llm"). Multiple providers configured side by side;
   #     switch with `policy.provider` or the scripts' `--provider`. All are frozen, zero-update.
-  provider: "deepseek"                      # which profile below to use
+  provider: "venus"                         # which profile below to use
   cache: false                              # disk-cache prior calls (saves $; freezes sampling)
   cache_dir: "outputs/llm_cache"
   max_retries: 5                            # exponential backoff on rate-limit / network errors
   timeout_s: 60
   max_tokens: 512
   providers:
+    venus:                                   # Tencent Venus internal LLM proxy (OpenAI-compatible)
+      api: "openai"
+      model: "deepseek-v4-pro"
+      base_url: "http://v2.open.venus.oa.com/llmproxy"
+      api_key_env: "VENUS_API_KEY"
     openai:
       api: "openai"
       model: "gpt-4o-mini"

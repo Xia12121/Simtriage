@@ -49,6 +49,18 @@ def load_cfg(path=None):
         return yaml.safe_load(f)
 
 
+def _load_dotenv(path):
+    """Minimal .env loader (no dependency): KEY=VALUE lines populate os.environ without
+    overriding an already-set variable. Lets API keys live in a gitignored .env."""
+    if not os.path.exists(path):
+        return
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
 # --------------------------------------------------------------- protocols
 def evolve_then_frozen_eval(cfg, game, lam, train_seeds, heldout_seeds, seed=0, **agent_kw):
     """Train theta on train seeds, then evaluate FROZEN on held-out (deployed metric)."""
@@ -170,6 +182,7 @@ def main():
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)
+    _load_dotenv(os.path.join(ROOT, ".env"))   # pick up API keys (e.g. VENUS_API_KEY) if present
     if args.backend:
         cfg["policy"]["backend"] = args.backend
     if args.provider:
