@@ -263,8 +263,18 @@ class LLMPolicy(Policy):
         actions = list(env.valid_actions(state))
         if not actions:
             return [], []
-        # Cap candidate set for prompting cost; rank the white-box legal actions.
-        cand = actions[:50]
+        if len(actions) == 1:
+            return actions, [0.0]  # forced move: skip the LLM call entirely (saves latency/$)
+        # Pre-filter to top-k by the env's cheap heuristic, THEN let the LLM rank those. This
+        # cuts prompt size & latency on high-branch states and focuses the prior on plausible
+        # actions (the white-box legal set is still the source; the heuristic only narrows it).
+        kf = max(int(m), int(self.pcfg.get("llm_prefilter", 8)))
+        try:
+            hs = np.asarray(env.heuristic_scores(state, actions), dtype=float)
+            order = np.argsort(hs)[::-1][:min(kf, len(actions))]
+            cand = [actions[i] for i in order]
+        except Exception:
+            cand = actions[:kf]
         rendered = "\n".join(f"[{i}] {env.render_action(a)}" for i, a in enumerate(cand))
         sys = (
             "You are an expert game player. Rate each candidate action by long-run value. "

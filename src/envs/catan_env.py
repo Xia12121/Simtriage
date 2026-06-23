@@ -87,6 +87,9 @@ _TYPE_PRIORITY = {
 }
 _DEFAULT_PRIORITY = 1.0
 
+# dice pips (ways to roll each number) — production desirability of an adjacent tile
+_PIPS = {2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 0, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1}
+
 
 def _color_by_name(name: str):
     name = (name or "RED").upper()
@@ -370,18 +373,58 @@ class CatanEnv(GameEnv):
         return self.weighted_random_action(None, actions)
 
     # ----------------------------------------------------------- LLM rendering
+    def _node_production_str(self, node_id) -> str:
+        """Board-aware description of a node: adjacent resources + dice numbers + total pips,
+        so the LLM can judge settlement/city spot quality instead of staring at a node id."""
+        try:
+            tiles = self.game.state.board.map.adjacent_tiles[node_id]
+            parts, pips = [], 0
+            for t in tiles:
+                r = getattr(t, "resource", None)
+                n = getattr(t, "number", None)
+                if r is None:
+                    continue  # desert
+                parts.append(f"{r}{n}")
+                pips += _PIPS.get(n, 0)
+            return (" ".join(parts) + f" (pips {pips})") if parts else "desert-only"
+        except Exception:
+            return "?"
+
     def render_action(self, action) -> str:
-        return str(action)
+        at = self._atype_name(action)
+        val = getattr(action, "value", None)
+        if at in ("BUILD_SETTLEMENT", "BUILD_CITY") and isinstance(val, int):
+            return f"{at} at node {val} [{self._node_production_str(val)}]"
+        if at == "BUILD_ROAD":
+            return f"BUILD_ROAD {val}"
+        if at == "MARITIME_TRADE":
+            return f"MARITIME_TRADE {val}"
+        if at == "MOVE_ROBBER":
+            return f"MOVE_ROBBER {val}"
+        if val is None:
+            return at
+        return f"{at} {val}"
 
     def render_text(self, state) -> str:
         g = state.raw if hasattr(state, "raw") else self.game
-        parts = [f"phase={self._phase_value(g):.1f}", f"turn={self._num_turns(g)}"]
+        you = getattr(self._our_color, "value", self._our_color)
+        out = [f"Catan, turn {self._num_turns(g)}. You are {you}. Standings:"]
         try:
+            from catanatron.state_functions import (get_longest_road_length,
+                                                    player_num_resource_cards)
             for c in self._colors(g):
-                parts.append(f"{getattr(c, 'value', c)}:VP={self._vp(g, c)}")
+                vp = self._vp(g, c)
+                try:
+                    road = get_longest_road_length(g.state, c)
+                    hand = player_num_resource_cards(g.state, c)
+                    extra = f", longest_road {road}, {hand} cards"
+                except Exception:
+                    extra = ""
+                me = "  <-- you" if c == self._our_color else ""
+                out.append(f"  {getattr(c,'value',c)}: {vp} VP{extra}{me}")
         except Exception:
             pass
-        return " | ".join(parts)
+        return "\n".join(out)
 
     # ======================================================== phase / progress
     def phase_progress(self, state: State) -> float:

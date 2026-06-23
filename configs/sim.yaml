@@ -53,6 +53,7 @@ policy:
   # --- LLM backend (used when backend == "llm"). Multiple providers configured side by side;
   #     switch with `policy.provider` or the scripts' `--provider`. All are frozen, zero-update.
   provider: "venus"                         # which profile below to use
+  llm_prefilter: 8                          # heuristic pre-filter to top-k before LLM ranks (cuts latency)
   cache: false                              # disk-cache prior calls (saves $; freezes sampling)
   cache_dir: "outputs/llm_cache"
   max_retries: 5                            # exponential backoff on rate-limit / network errors
