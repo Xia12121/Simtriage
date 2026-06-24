@@ -366,11 +366,33 @@ class CatanEnv(GameEnv):
 
     # opponent action selection during the REAL episode
     def _opponent_action(self, actions):
+        if self.opp_kind in ("victory_point", "vp", "strong"):
+            color = getattr(actions[0], "color", None)
+            p = self._get_opp_player(color)
+            if p is not None:
+                try:
+                    return p.decide(self.game, actions)
+                except Exception:
+                    pass
+            return self.greedy_action(None, actions)
         if self.opp_kind == "random":
             return self.random_action(None, actions)
         if self.opp_kind in ("value", "greedy"):
             return self.greedy_action(None, actions)
         return self.weighted_random_action(None, actions)
+
+    def _get_opp_player(self, color):
+        """Lazily build a catanatron VictoryPointPlayer (greedy-VP, a STRONGER opponent than
+        weighted-random) per color, so games are challenging enough for queries to matter."""
+        if getattr(self, "_opp_players", None) is None:
+            self._opp_players = {}
+        if color not in self._opp_players:
+            try:
+                from catanatron.players.search import VictoryPointPlayer
+                self._opp_players[color] = VictoryPointPlayer(color)
+            except Exception:
+                self._opp_players[color] = None
+        return self._opp_players[color]
 
     # ----------------------------------------------------------- LLM rendering
     def _node_production_str(self, node_id) -> str:
