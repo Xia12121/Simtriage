@@ -15,6 +15,7 @@ from __future__ import annotations
 import copy
 import math
 import random as _pyrandom
+import zlib
 from typing import Any, Optional
 
 import numpy as np
@@ -330,7 +331,10 @@ class CatanEnv(GameEnv):
         scores = []
         for a in actions:
             base = _TYPE_PRIORITY.get(self._atype_name(a), _DEFAULT_PRIORITY)
-            noise = ((hash(repr(a)) % 1000) / 1000.0 - 0.5) * 0.4
+            # deterministic tie-break noise: builtin hash() is per-process randomized
+            # (PYTHONHASHSEED) and made results irreproducible across runs/processes.
+            h = zlib.crc32(repr(a).encode("utf-8"))
+            noise = ((h % 1000) / 1000.0 - 0.5) * 0.4
             scores.append(base + noise)
         return scores
 

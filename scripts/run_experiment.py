@@ -142,13 +142,18 @@ def transfer_test(cfg, game, lam, train_seeds, heldout_seeds, seed0, instance_de
     base.qvl.consolidate(prune=False)
     trained_qvl = base.qvl
 
-    # Deployment on held-out (normal, low reference rate). Transfer reuses the trained QVL.
+    # FROZEN deployment on held-out (reference_rate=0): the deployed metric U=G-lam*C then
+    # reflects GATING QUALITY, not label-collection cost. (Running online with rho>0 lets the
+    # expensive to_game_end reference rollouts dominate C and bury the transfer signal — that
+    # was the spurious "transfer fails" on Catan.) Transfer = trained QVL + fresh VoQ (so the
+    # gate uses the transferred prior); scratch = empty everything (optimistic cold start).
     t_agent = SimTriage(cfg_use, lam=lam, game=game,
                         qvl=QVL.from_dict(trained_qvl.to_dict()), transfer=True, seed=seed0 + 1)
-    transfer_results = t_agent.evolve(make_env(game, cfg_use), heldout_seeds, learn=True)
-
+    transfer_results = [t_agent.run_episode(make_env(game, cfg_use), s, learn=False, reference_rate=0.0)
+                        for s in heldout_seeds]
     s_agent = SimTriage(cfg_use, lam=lam, game=game, transfer=False, seed=seed0 + 2)
-    scratch_results = s_agent.evolve(make_env(game, cfg_use), heldout_seeds, learn=True)
+    scratch_results = [s_agent.run_episode(make_env(game, cfg_use), s, learn=False, reference_rate=0.0)
+                       for s in heldout_seeds]
     return transfer_results, scratch_results, trained_qvl
 
 
