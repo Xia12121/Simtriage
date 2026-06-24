@@ -100,8 +100,8 @@ env:
   catan:
     num_players: 4
     our_color: "RED"                        # the color SimTriage controls
-    opponents: "weighted_random"            # bot policy for opponents: random|weighted_random|value
-    return_kind: "victory_points"           # "victory_points" | "win" | "vp_margin"
+    opponents: "victory_point"              # random|weighted_random|value|victory_point(strong, greedy-VP)
+    return_kind: "vp_margin"                # "victory_points" | "win" | "vp_margin" (continuous, no ceiling)
     max_ticks: 2000                         # safety cap per episode
   sts:
     supports_cheap_clone: false             # true only if a fast forward simulator is wired in
