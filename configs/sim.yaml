@@ -115,8 +115,8 @@ env:
 
 experiment:
   games: ["catan"]                          # run catan first; add "sts","minecraft" later
-  seeds_train: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-  seeds_heldout: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]  # held-out (10 for tighter significance)
+  seeds_train: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+  seeds_heldout: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119]  # 20 held-out for tighter significance
   episodes_per_seed: 1
   methods: ["simtriage", "never_query", "always_query", "fixed_threshold", "random_gate"]
   ablations: ["minus_m2_imagine", "minus_m3_from_scratch", "phi_instance_dependent"]
